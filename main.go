@@ -2,6 +2,7 @@ package main
 import (
   "time"
   "io/ioutil"
+  "os"
   "go.uber.org/zap"
   "github.com/hashicorp/raft"
   "fmt"
@@ -68,10 +69,15 @@ func main() {
 }
 
 func makeRaft(conf *raft.Config, bootstrap bool) *RaftEnv {
-  dir,err := ioutil.TempDir("/Users/wuzhaoming3/Desktop/work/src/traft/snapshot","raft") 
   stable := raft.NewInmemStore()
+  if _, err := os.Stat("snapshot"); os.IsNotExist(err) {
+    err := os.Mkdir("snapshot",0755)
+    NoErr(err)
+  }
+  
+  dir,err := ioutil.TempDir("snapshot","raft") 
   if err != nil {
-    panic("creating in memstore fail")
+    logger.Panic("creating temp file",zap.Error(err))
   }
   snap, err := raft.NewFileSnapshotStore(dir,3,nil)
   if err != nil {
