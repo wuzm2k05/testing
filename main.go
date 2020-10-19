@@ -64,7 +64,16 @@ func main() {
   //create a single node
   env1 := makeRaft(conf, true)
   NoErr(waitFor(env1,raft.Leader))
-  
+
+  //join a few nodes
+  var envs []*RaftEnv
+  for i := 0; i<2; i++ {
+    conf.LocalID = ServerID(fmt.Sprintf("next-batch-%d",i))
+    env := makeRaft(conf,false)
+    addr := env.trans.LocalAddr()
+    NoErr(
+  }
+    
   
 }
 
