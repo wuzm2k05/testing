@@ -6,7 +6,6 @@ import (
   "go.uber.org/zap"
   "github.com/hashicorp/raft"
   "fmt"
-  "strconv"
 )
 
 type RaftEnv struct {
@@ -77,21 +76,27 @@ WAIT:
 }
       
 
-func leaderAction(conf raft.Config, serverID string, port string){
+func leaderAction(conf *raft.Config, serverID string, port string){
   //create a single leader node
   conf.LocalID=raft.ServerID(serverID)
   env1 := makeRaft(conf, true,port)
   NoErr(waitFor(env1,raft.Leader))
 
-  //add one voter
+  for i := 0; i<2; i++ {
+    var serverID, port string
+    //add one voter
+    fmt.Print("Input Voter addr [serverID port]:")
+    fmt.Scanln(&serverID,&port)
+    addr := raft.ServerAddress("127.0.0.1:"+port)
+    NoErr(WaitFuture(env1.raft.AddVoter(raft.ServerID(serverID),addr,0,0)))
+  }
+  
   
 }
 
-func voterAction(conf raft.Config, serverID string, port string){
+func voterAction(conf *raft.Config, serverID string, port string){
   conf.LocalID=raft.ServerID(serverID)
-  env := makeRaft(conf,false,port)
-  addr := env.trans.LocalAddr()
-  NoErr(WaitFuture(env1.raft.AddVoter(conf.LocalID,addr,0,0)))
+  makeRaft(conf,false,port)
 }
 
 /*
@@ -116,10 +121,12 @@ func main() {
   }
 
   if os.Args[1] == "l" {
-    leaderAction()
+    leaderAction(conf,os.Args[2],os.Args[3])
   }else{
-    voterAction()
+    voterAction(conf,os.Args[2],os.Args[3])
   }
+
+/*
   //create a single node
   env1 := makeRaft(conf, true,"9000")
   NoErr(waitFor(env1,raft.Leader))
@@ -138,6 +145,7 @@ func main() {
   NoErr(err)
 
   leader = leader
+*/
  
   
   for{
