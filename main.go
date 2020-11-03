@@ -6,6 +6,7 @@ import (
   "go.uber.org/zap"
   "github.com/hashicorp/raft"
   "fmt"
+  "net/http"
 )
 
 type RaftEnv struct {
@@ -20,6 +21,7 @@ type RaftEnv struct {
 
 var (
   logger *zap.Logger
+  raftEnv *RaftEnv
 )
 
 func init() {
@@ -38,7 +40,6 @@ func WaitFuture(f raft.Future) error {
   return f.Error()
 }
 
-
 func NoErr(err error) {
   if err != nil {
     logger.Panic("",zap.Error(err))
@@ -46,7 +47,7 @@ func NoErr(err error) {
 }
 
 func waitFor(env *RaftEnv, state raft.RaftState) error {
-  limit := time.Now().Add(200 * time.Millisecond)
+  limit := time.Now().Add(50000 * time.Millisecond)
   for env.raft.State() != state {
     if time.Now().Before(limit) {
       time.Sleep(10*time.Millisecond)
@@ -79,9 +80,9 @@ WAIT:
 func leaderAction(conf *raft.Config, serverID string, port string){
   //create a single leader node
   conf.LocalID=raft.ServerID(serverID)
-  env1 := makeRaft(conf, true,port)
-  NoErr(waitFor(env1,raft.Leader))
-
+  raftEnv = makeRaft(conf, true,port)
+  NoErr(waitFor(raftEnv,raft.Leader))
+/*
   for i := 0; i<2; i++ {
     var serverID, port string
     //add one voter
@@ -90,35 +91,76 @@ func leaderAction(conf *raft.Config, serverID string, port string){
     addr := raft.ServerAddress("127.0.0.1:"+port)
     NoErr(WaitFuture(env1.raft.AddVoter(raft.ServerID(serverID),addr,0,0)))
   }
-  
-  
+*/
 }
 
 func voterAction(conf *raft.Config, serverID string, port string){
   conf.LocalID=raft.ServerID(serverID)
-  makeRaft(conf,false,port)
+  raftEnv = makeRaft(conf,false,port)
 }
 
-/*
+func httpStatus(w http.ResponseWriter, r *http.Request) {
+  fmt.Fprintf(w,"rafStatus:"+raftEnv.raft.State().String()+"\n")
+}
+func httpAddServer(w http.ResponseWriter, r *http.Request) {
+  if err := r.ParseForm(); err != nil {
+    fmt.Fprintf(w,"ParseForm() err: %v",err)
+    return
+  } 
+  
+  serverID := r.Form.Get("serverID")
+  port := r.Form.Get("port")
+  logger.Info("Receive adding server request\n")
+  logger.Info("serverID:"+serverID+"  port:"+port+"\n")
+  if port == "" || serverID == "" {
+    fmt.Fprintf(w,"port or serverID is nil\n")
+    return
+  }
+  addr := raft.ServerAddress("127.0.0.1:"+port)
+  NoErr(WaitFuture(raftEnv.raft.AddVoter(raft.ServerID(serverID),addr,0,0)))
+  fmt.Fprintf(w,"adding server success\n")
+}
+
+func httpHandler(w http.ResponseWriter, r *http.Request) {
+  if r.Method == "GET" {
+    httpStatus(w,r)
+  }else if r.Method == "POST" {
+    httpAddServer(w,r)
+  }else{
+    http.Error(w,"Method is not support.",http.StatusNotFound)
+  }
+}
+
+/***********
 parameter:
-usage:  traft [l|c] [ServerID] [port]
-Des: for leader:
-    Add Voter: [serverID] [port] 
+usage:  traft [l|v] [ServerID] [raft_port] [http_port]
+Des:
+   this program use hashicorp raft package to build a raft cluster. All processes need to run on same machine.
+   Step1: traft l [ServerID] [raft_port] [http_port]//start one process1 as leader
+   Step2: traft v [ServerID] [raft_port] [http_port]//start one process2 as voter
+   para:
+       [l|v] leader or voter. l means the process will start as leader. voter means process start as voter, so it will wait untill leader add it to cluster.
+       [ServerID] Id of the server. ID should be different for each server in the cluster.
+       [raft_port] raft listen port of the server. (each port has to be different than others)
+       [http_port] http port for getting information of raft and input commands for raft
+for leader:
 */  
 func main() {
-  logger.Info("program starting...")
   conf := raft.DefaultConfig()
   conf.LocalID = raft.ServerID("first")
-  conf.HeartbeatTimeout = 50* time.Millisecond
-  conf.ElectionTimeout = 50* time.Millisecond
-  conf.LeaderLeaseTimeout = 50* time.Millisecond
-  conf.CommitTimeout = 5* time.Millisecond
+  conf.HeartbeatTimeout = 3000* time.Millisecond
+  conf.ElectionTimeout = 3000* time.Millisecond
+  conf.LeaderLeaseTimeout = 3000* time.Millisecond
+  conf.CommitTimeout = 500* time.Millisecond
   conf.SnapshotThreshold = 100
   conf.TrailingLogs = 10
 
-  if len(os.Args) != 4 {
+  if len(os.Args) != 5 {
+    logger.Info("Usage: traft [l|v] [ServerID] [raft_port] [http_port]")
     logger.Panic("args Error")
   }
+
+  logger.Info("program starting...")
 
   if os.Args[1] == "l" {
     leaderAction(conf,os.Args[2],os.Args[3])
@@ -126,32 +168,9 @@ func main() {
     voterAction(conf,os.Args[2],os.Args[3])
   }
 
-/*
-  //create a single node
-  env1 := makeRaft(conf, true,"9000")
-  NoErr(waitFor(env1,raft.Leader))
-
-  //join a few nodes
-  var envs []*RaftEnv
-  for i := 0; i<2; i++ {
-    conf.LocalID = raft.ServerID(fmt.Sprintf("next-batch-%d",i))
-    env := makeRaft(conf,false,strconv.Itoa(9000+i+1))
-    addr := env.trans.LocalAddr()
-    NoErr(WaitFuture(env1.raft.AddVoter(conf.LocalID,addr,0,0)))
-    envs = append(envs,env)
-  }
-
-  leader, err := WaitForAny(raft.Leader, append([]*RaftEnv{env1},envs...))
-  NoErr(err)
-
-  leader = leader
-*/
- 
-  
-  for{
-    time.Sleep(3000*time.Millisecond)
-  }
-  
+  logger.Info("starting http server...") 
+  http.HandleFunc("/",httpHandler)
+  NoErr(http.ListenAndServe(":"+os.Args[4],nil))
 }
 
 func makeRaft(conf *raft.Config, bootstrap bool, port string) *RaftEnv {
