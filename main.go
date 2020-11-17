@@ -102,7 +102,12 @@ func voterAction(conf *raft.Config, serverID string, port string){
 func httpStatus(w http.ResponseWriter, r *http.Request) {
   fmt.Fprintf(w,"rafStatus:"+raftEnv.raft.State().String()+"\n")
 }
-func httpAddServer(w http.ResponseWriter, r *http.Request) {
+
+
+func httpPostHandler(w http.ResponseWriter, r *http.Request) {
+  if r.Url 
+
+func httpPostHandler(w http.ResponseWriter, r *http.Request) {
   if err := r.ParseForm(); err != nil {
     fmt.Fprintf(w,"ParseForm() err: %v",err)
     return
@@ -125,7 +130,7 @@ func httpHandler(w http.ResponseWriter, r *http.Request) {
   if r.Method == "GET" {
     httpStatus(w,r)
   }else if r.Method == "POST" {
-    httpAddServer(w,r)
+    httpPostHandler(w,r)
   }else{
     http.Error(w,"Method is not support.",http.StatusNotFound)
   }
@@ -136,13 +141,19 @@ parameter:
 usage:  traft [l|v] [ServerID] [raft_port] [http_port]
 Des:
    this program use hashicorp raft package to build a raft cluster. All processes need to run on same machine.
-   Step1: traft l [ServerID] [raft_port] [http_port]//start one process1 as leader
-   Step2: traft v [ServerID] [raft_port] [http_port]//start one process2 as voter
    para:
        [l|v] leader or voter. l means the process will start as leader. voter means process start as voter, so it will wait untill leader add it to cluster.
        [ServerID] Id of the server. ID should be different for each server in the cluster.
        [raft_port] raft listen port of the server. (each port has to be different than others)
        [http_port] http port for getting information of raft and input commands for raft
+
+  procedure:
+    1. start leader: traft l fist 8000 9000
+    2. start one voter: traft v second 8001 9001
+    3. join the voter to cluster (on first port): curl -X POST -d "serverID=second&port=8001" http://127.0.0.1:9000   
+    4. start another voter node: traft v third 8002 9002
+    5. join the voter to cluster (on first port): curl -X POST -d "serverID=third&port=8002" http://127.0.0.1:9000
+   for l
 for leader:
 */  
 func main() {
